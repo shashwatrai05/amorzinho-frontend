@@ -1,22 +1,83 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { dummyUserData } from '../assets/assets';
 import { Image, X } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
+import { useAuth } from '@clerk/clerk-react';
+import { useNavigate } from 'react-router-dom';
+import api from '../api/axios';
 
 const CreatePost = () => {
+
+  const navigate = useNavigate();
 
   const [content, setContent] = useState('')
   const [images, setImages] = useState([])
   const [loading, setLoading] = useState(false)
+  const [currentUser, setCurrentUser] = useState(null)
 
-  const users = dummyUserData;
+  const users = useSelector((state) => state.user.value);
+
+  const { getToken } = useAuth();
+
+  const fetchCurrentUser = async () => {
+    const token = await getToken();
+    try {
+      const { data } = await api.get('/api/user/data', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setCurrentUser(data);
+    } catch (error) {
+      console.error('Failed to fetch current user:', error);
+      // Fallback to Redux store data
+      setCurrentUser(users);
+    }
+  };
+
+  useEffect(() => {
+    fetchCurrentUser();
+  }, []);
 
   const handlePostSubmit = async () => {
     // Logic to handle post submission
+    if (!images.length && !content) {
+      return toast.error("Post cannot be empty");
+    }
+
+    setLoading(true);
+
+    const postType = images.length > 0 && content.trim() !== '' ? 'text_with_image' : images.length > 0 ? 'image' : 'text';
+
+    try {
+      const formData = new FormData();
+      formData.append('content', content);
+      formData.append('post_type', postType);
+      images.map((img) => formData.append('images', img));
+
+      const { data } = await api.post('/api/post/add', formData, {
+        headers: {
+          Authorization: `Bearer ${await getToken()}`,
+        }
+      });
+
+      if (data.message === "Post created successfully") {
+        navigate('/');
+      }
+      else {
+        console.log('Post creation failed:', data.message);
+        throw new Error(data.message || 'Failed to create post');
+      }
+
+    } catch (error) {
+      console.log('Error publishing post:', error);
+      throw new Error(error.message);
+    }
+
+    setLoading(false);
   }
 
   return (
-    <div className='min-h-screen bg-gradient-to-b from slate-50 to-white'>
+    <div className='min-h-screen bg-gradient-to-b from-slate-50 to-white'>
       <div className='max-w-6xl mx-auto p-6'>
         {/* Title */}
         <div className='mb-8'>
@@ -28,10 +89,10 @@ const CreatePost = () => {
         <div className='max-w-xl bg-white p-4 sm:p-8 sm:pb-3 rounded-xl shadow-md space-y-4'>
           {/* Header */}
           <div className='flex items-center gap-3'>
-            <img src={users.profile_picture} alt="" className='w-12 h-12 rounded-full shadow' />
+            <img src={currentUser?.profile_picture || users?.profile_picture} alt="" className='w-12 h-12 rounded-full shadow' />
             <div>
-              <h2 className='font-semibold'>{users.full_name}</h2>
-              <p className='text-sm text-gray-500'>@{users.username}</p>
+              <h2 className='font-semibold'>{currentUser?.full_name || users?.full_name}</h2>
+              <p className='text-sm text-gray-500'>@{currentUser?.username || users?.username}</p>
             </div>
           </div>
 
@@ -68,8 +129,9 @@ const CreatePost = () => {
             <button disabled={loading} onClick={() => toast.promise(
               handlePostSubmit(),
               {
-                loading: 'uploading...',
-                success: <p>Post published successfully!</p>
+                loading: 'Uploading...',
+                success: 'Post published successfully!',
+                error: 'Failed to publish post'
               }
             )} className='text-sm bg-gradient-to-r from-indigo-500 to-purple-600 
             hover:from-indigo-600 hover:to-purple-700 active:scale-95 transition text-white

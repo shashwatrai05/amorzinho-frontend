@@ -3,15 +3,49 @@ import moment from 'moment';
 import React, { useState } from 'react';
 import { dummyUserData } from '../assets/assets';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
+import { useAuth } from '@clerk/clerk-react';
+import toast from 'react-hot-toast';
+import api from '../api/axios';
 
 const PostCard = ({ post }) => {
     const postWithHashtags = post.content.replace(/#(\w+)/g, '<span class="text-blue-500 cursor-pointer">#$1</span>');
-    const [likes, setLikes] = useState(post.likes_count || 0);
-    const currentUser = dummyUserData
+    const [likes, setLikes] = useState(post.likes_count || []);
+    const currentUser = useSelector((state) => state.user.value);
 
-    const handleLike = () => {
-        // Simulate like action
-        setLikes(likes + 1);
+    const { getToken } = useAuth();
+
+    const handleLike = async () => {
+        if (!currentUser) return;
+
+        const isCurrentlyLiked = likes.includes(currentUser._id);
+
+        // Optimistically update UI
+        if (isCurrentlyLiked) {
+            setLikes(prev => prev.filter(id => id !== currentUser._id));
+        } else {
+            setLikes(prev => [...prev, currentUser._id]);
+        }
+
+        try {
+            const { data } = await api.post('/api/post/like', { postId: post._id },
+                { headers: { Authorization: `Bearer ${await getToken()}` } }
+            );
+
+            // Just show the message from backend
+            if (data.message) {
+                toast.success(data.message);
+            }
+        } catch (error) {
+            // Revert the optimistic update on error
+            if (isCurrentlyLiked) {
+                setLikes(prev => [...prev, currentUser._id]);
+            } else {
+                setLikes(prev => prev.filter(id => id !== currentUser._id));
+            }
+            console.error('Like error:', error);
+            toast.error(error.response?.data?.message || 'Failed to update like');
+        }
     }
 
     const navigate = useNavigate()
@@ -30,7 +64,7 @@ const PostCard = ({ post }) => {
                         <span>{post.user.full_name}</span>
                         <BadgeCheck className="w-4 h-4 text-blue-500" />
                     </div>
-                    <div className='text-gray-500 text-sm'>@{post.user.username} {moment(post.created_at).fromNow()}</div>
+                    <div className='text-gray-500 text-sm'>@{post.user.username} {moment(post.createdAt).fromNow()}</div>
                 </div>
             </div>
 
@@ -51,10 +85,10 @@ const PostCard = ({ post }) => {
             <div className='flex items-center gap-4 text-gray-600 text-sm pt-2 border-t border-gray-300'>
                 <div className='flex items-center gap-1'>
                     <Heart
-                        className={`w-4 h-4 cursor-pointer ${likes.includes(currentUser._id) && 'text-red-500 fill-red-500'}`}
+                        className={`w-4 h-4 cursor-pointer ${currentUser && likes.includes(currentUser._id) ? 'text-red-500 fill-red-500' : 'hover:text-red-400'}`}
                         onClick={handleLike}
                     />
-                    <span>{likes.length}</span>
+                    <span>{Array.isArray(likes) ? likes.length : 0}</span>
                 </div>
                 <div className='flex items-center gap-1'>
                     <MessageCircle className='w-4 h-4' />

@@ -1,18 +1,82 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { dummyMessagesData, dummyUserData } from '../assets/assets'
 import { ImageIcon, SendHorizontal } from 'lucide-react'
+import { useDispatch, useSelector } from 'react-redux'
+import { useParams } from 'react-router-dom'
+import { useAuth } from '@clerk/clerk-react'
+import api from '../api/axios'
+import { addMessages, fetchMessages, resetMessages } from '../features/messages/messagesSlice'
+import toast from 'react-hot-toast'
 
 const ChatBox = () => {
 
-  const messages = dummyMessagesData
+  const { messages } = useSelector((state) => state.messages);
+  const { userId } = useParams();
+  const { getToken } = useAuth();
+  const dispatch = useDispatch();
+
   const [text, setText] = useState('')
   const [image, setImage] = useState(null)
-  const [user, setUser] = useState(dummyUserData)
+  const [user, setUser] = useState(null)
   const messagesEndRef = useRef(null)
 
-  const sendMessage = async () => {
-    // Logic to send message
+  const connections = useSelector((state) => state.connections);
+
+  const fetchUserMessages = async () => {
+    try {
+      const token = await getToken();
+      dispatch(fetchMessages({ userId, token }));
+    } catch (error) {
+      toast.error('Failed to fetch messages');
+    }
   }
+
+  const sendMessage = async () => {
+    try {
+      if (!text.trim() && !image) return;
+
+      const token = await getToken();
+
+      const formData = new FormData();
+      formData.append('to_user_id', userId);
+      formData.append('text', text);
+      image && formData.append('image', image);
+
+      const { data } = await api.post('/api/message/send', formData, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        }
+      });
+
+      if (data.message) {
+        // Append new message to Redux store
+        setText('');
+        setImage(null);
+        dispatch(addMessages(data.message));
+      } else {
+        throw new Error(data.message);
+      }
+    } catch (error) {
+      toast.error(error.message)
+    }
+  }
+
+  useEffect(
+    () => {
+      fetchUserMessages();
+
+      return () => {
+        // Cleanup messages on unmount
+        dispatch(resetMessages());
+      }
+    }, [userId])
+
+  useEffect(() => {
+    if (connections.length > 0) {
+      const chatUser = connections.find(conn => conn._id === userId);
+      setUser(chatUser);
+    }
+  }, [connections, userId])
 
   useEffect(() => {
     // Scroll to bottom when messages change

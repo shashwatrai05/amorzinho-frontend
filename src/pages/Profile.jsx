@@ -6,23 +6,107 @@ import UserProfileInfo from '../components/UserProfileInfo';
 import PostCard from '../components/PostCard';
 import moment from 'moment';
 import ProfileModal from '../components/ProfileModal';
+import { useAuth } from '@clerk/clerk-react';
+import toast from 'react-hot-toast';
+import { useSelector } from 'react-redux';
+import api from '../api/axios';
 
 const Profile = () => {
+
+  const currentUser = useSelector((state) => state.user.value);
+  const { getToken } = useAuth();
   const { profileId } = useParams();
   const [user, setUser] = useState(null);
   const [posts, setPosts] = useState([]);
   const [activeTab, setActiveTab] = useState('posts');
   const [showEdit, setShowEdit] = useState(false);
 
-  const fetchUser = async () => {
-    // Fetch user data logic here
-    setUser(dummyUserData);
-    setPosts(dummyPostsData);
-  }
+  const fetchCurrentUser = async () => {
+    const token = await getToken();
+    try {
+      const { data } = await api.get('/api/user/data', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      return data;
+    } catch (error) {
+      console.error('Failed to fetch current user:', error);
+      return null;
+    }
+  };
+
+  const fetchUserProfile = async (profileId) => {
+    const token = await getToken();
+    console.log('Fetching user profile with profileId:', profileId);
+    console.log('Token:', token ? 'Present' : 'Missing');
+
+    try {
+      const { data } = await api.post('/api/user/profiles', { profileId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log('API Response:', data);
+
+      if (data.profile) {
+        setUser(data.profile);
+        setPosts(data.posts);
+      } else {
+        toast.error(data.message || 'Failed to load profile');
+      }
+    } catch (error) {
+      console.error('Profile fetch error:', error);
+      toast.error(error.response?.data?.message || error.message);
+    }
+  };
+
+  const fetchUser = async (profileId) => {
+    if (profileId) {
+      // Viewing someone else's profile
+      await fetchUserProfile(profileId);
+    } else {
+      // Viewing your own profile - get current user data first
+      const currentUserData = await fetchCurrentUser();
+      if (currentUserData) {
+        console.log('Current user data:', currentUserData);
+        setUser(currentUserData);
+        // Now fetch just the posts for this user
+        await fetchUserPosts(currentUserData._id);
+      } else {
+        // Fallback to dummy data if authentication fails
+        setUser(currentUser);
+        setPosts([]);
+      }
+    }
+  };
+
+  const fetchUserPosts = async (userId) => {
+    const token = await getToken();
+    console.log('Fetching posts for userId:', userId);
+
+    try {
+      const { data } = await api.post('/api/user/profiles', { profileId: userId },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      console.log('Posts API Response:', data);
+
+      if (data.posts) {
+        setPosts(data.posts);
+        console.log('Posts set:', data.posts.length, 'posts');
+      } else {
+        console.log('No posts returned');
+        setPosts([]);
+      }
+    } catch (error) {
+      console.error('Posts fetch error:', error);
+      setPosts([]);
+    }
+  };
+
+  const handleUserUpdate = (updatedUser) => {
+    setUser(updatedUser);
+  };
 
   useEffect(() => {
-    fetchUser();
-  }, []);
+    fetchUser(profileId);
+  }, [profileId]);
 
   return user ? (
     <div className='relative h-full overflow-y-scroll bg-gray-50 p-6'>
@@ -91,7 +175,7 @@ const Profile = () => {
 
       </div>
 
-      {showEdit && <ProfileModal setShowEdit={setShowEdit} />}
+      {showEdit && <ProfileModal setShowEdit={setShowEdit} currentUserData={user} onUserUpdate={handleUserUpdate} />}
     </div>
   ) : <Loading />;
 }

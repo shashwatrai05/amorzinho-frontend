@@ -3,11 +3,13 @@ import { assets, dummyUserData } from "../assets/assets";
 import { useNavigate, Link } from "react-router-dom";
 import MenuItems from "./MenuItems";
 import { CirclePlus } from "lucide-react";
-import { UserButton } from "@clerk/clerk-react";
+import { useClerk, UserButton } from "@clerk/clerk-react";
+import { useSelector } from "react-redux";
 
 const SideBar = ({ sideBarOpen, setSideBarOpen }) => {
   const navigate = useNavigate();
-  const user = dummyUserData;
+  const user = useSelector((state) => state.user.value);
+  const { signOut } = useClerk();
 
   return (
     <div
@@ -42,7 +44,7 @@ const SideBar = ({ sideBarOpen, setSideBarOpen }) => {
         {/* Create Post Button */}
         <div className="px-4 mt-4">
           <Link
-            to="/create-post"
+            to="/createpost"
             className="flex items-center gap-3 py-2.5 px-3 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-600 
                        hover:from-indigo-600 hover:to-purple-700 active:scale-[0.98] 
                        text-white font-medium w-full justify-start transition-all duration-200"
